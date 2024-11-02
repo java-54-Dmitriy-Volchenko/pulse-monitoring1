@@ -47,4 +47,3 @@ Resources:
             Action:
               - dynamodb:*
   
- 
