@@ -1,9 +1,9 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: Streams DynamoDB table changes to EventBridge (uksb-1tthgi812) (tag:dynamodb-eventbridge-java)
+Description: Microservice architecture with pulse monitoring and range provider.
+
 Globals:
   Function:
-    Handler: telran.pulse.monitoring.App::handleRequest
     Runtime: java17
     Architectures:
       - x86_64
@@ -12,11 +12,9 @@ Globals:
     Environment:
       Variables:
         LOGGER_LEVEL: FINEST
-    
-      
 
 Resources:
-  #DynamoDB Streams specification
+  # DynamoDB таблицы
   PulseValuesStream:
     Type: 'AWS::DynamoDB::Table'
     Properties:
@@ -35,7 +33,8 @@ Resources:
         ReadCapacityUnits: 5
         WriteCapacityUnits: 5
       StreamSpecification:
-          StreamViewType: NEW_IMAGE
+        StreamViewType: NEW_IMAGE
+
   PulseAbnormalValuesStream:
     Type: 'AWS::DynamoDB::Table'
     Properties:
@@ -54,8 +53,8 @@ Resources:
         ReadCapacityUnits: 5
         WriteCapacityUnits: 5
       StreamSpecification:
-          StreamViewType: NEW_IMAGE
-         
+        StreamViewType: NEW_IMAGE
+
   PulseJumpValuesStream:
     Type: 'AWS::DynamoDB::Table'
     Properties:
@@ -74,11 +73,12 @@ Resources:
         ReadCapacityUnits: 5
         WriteCapacityUnits: 5
       StreamSpecification:
-          StreamViewType: NEW_IMAGE
+        StreamViewType: NEW_IMAGE
+
   PulseLastValues:
     Type: 'AWS::DynamoDB::Table'
     Properties:
-      TableName: last_pulse_valuess
+      TableName: last_pulse_values
       AttributeDefinitions:
         - AttributeName: patientId
           AttributeType: N
@@ -91,45 +91,74 @@ Resources:
           KeyType: RANGE
       ProvisionedThroughput:
         ReadCapacityUnits: 5
-        WriteCapacityUnits: 5       
-  # Define the publisher Lambda function with permissions
+        WriteCapacityUnits: 5
+
+  # Lambda функция для анализа скачков пульса
   PulseJumpAnalyzer:
     Type: 'AWS::Serverless::Function'
     Properties:
       CodeUri: pulse-jump-analyzer
-      
+      Handler: telran.pulse.monitoring.App::handleRequest
       Policies:
-        - Statement:
-          - Effect: Allow
-            Resource: '*'
-            Action:
-              - dynamodb:*
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PulseJumpValuesStream
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PulseLastValues
       Events:
         TableRecordChange:
           Type: DynamoDB
           Properties:
             StartingPosition: LATEST
             Stream: !GetAtt PulseValuesStream.StreamArn
-            FilterCriteria: 
-              Filters: 
-              - Pattern: '{"eventName": ["INSERT"]}'        
-# Define the publisher Lambda function with permissions
+            FilterCriteria:
+              Filters:
+                - Pattern: '{"eventName": ["INSERT"]}'
+
+  # Lambda функция для анализа значений пульса с использованием range-provider
   PulseValuesAnalyzer:
     Type: 'AWS::Serverless::Function'
     Properties:
       CodeUri: pulse-values-analyzer
+      Handler: telran.pulse.monitoring.App::handleRequest
+      Environment:
+        Variables:
+          RANGE_PROVIDER_URL: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/range"
       Policies:
-        - Statement:
-          - Effect: Allow
-            Resource: '*'
-            Action:
-              - dynamodb:*   
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PulseAbnormalValuesStream
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PulseValuesStream
       Events:
         TableRecordChange:
           Type: DynamoDB
           Properties:
             StartingPosition: LATEST
             Stream: !GetAtt PulseValuesStream.StreamArn
-            FilterCriteria: 
-              Filters: 
-              - Pattern: '{"eventName": ["INSERT"]}'      
+            FilterCriteria:
+              Filters:
+                - Pattern: '{"eventName": ["INSERT"]}'
+
+  # range-provider Lambda с API Gateway
+  RangeProviderFunction:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      CodeUri: range-provider
+      Handler: helloworld.App::handleRequest
+      MemorySize: 512
+      Events:
+        RangeProviderApi:
+          Type: Api
+          Properties:
+            Path: /range
+            Method: get
+
+Outputs:
+  PulseValuesStream:
+    Description: "DynamoDB Stream for pulse values"
+    Value: !GetAtt PulseValuesStream.StreamArn
+  PulseAbnormalValuesStream:
+    Description: "DynamoDB Stream for abnormal pulse values"
+    Value: !GetAtt PulseAbnormalValuesStream.StreamArn
+  RangeProviderApi:
+    Description: "API Gateway URL for range provider function"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/range"
