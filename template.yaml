@@ -11,7 +11,7 @@ Globals:
     MemorySize: 512
     Environment:
       Variables:
-        LOGGER_LEVEL: INFO
+        LOGGER_LEVEL: FINEST
     
       
 
@@ -35,7 +35,7 @@ Resources:
         ReadCapacityUnits: 5
         WriteCapacityUnits: 5
       StreamSpecification:
-          StreamViewType: NEW_AND_OLD_IMAGES
+          StreamViewType: NEW_IMAGE
   PulseAbnormalValuesStream:
     Type: 'AWS::DynamoDB::Table'
     Properties:
@@ -54,9 +54,44 @@ Resources:
         ReadCapacityUnits: 5
         WriteCapacityUnits: 5
       StreamSpecification:
-          StreamViewType: NEW_AND_OLD_IMAGES
+          StreamViewType: NEW_IMAGE
          
-
+  PulseJumpValuesStream:
+    Type: 'AWS::DynamoDB::Table'
+    Properties:
+      TableName: pulse_jumps_values
+      AttributeDefinitions:
+        - AttributeName: patientId
+          AttributeType: N
+        - AttributeName: timestamp
+          AttributeType: N
+      KeySchema:
+        - AttributeName: patientId
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+      StreamSpecification:
+          StreamViewType: NEW_IMAGE
+  PulseLastValues:
+    Type: 'AWS::DynamoDB::Table'
+    Properties:
+      TableName: last_pulse_valuess
+      AttributeDefinitions:
+        - AttributeName: patientId
+          AttributeType: N
+        - AttributeName: timestamp
+          AttributeType: N
+      KeySchema:
+        - AttributeName: patientId
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5       
   # Define the publisher Lambda function with permissions
   PulseJumpAnalyzer:
     Type: 'AWS::Serverless::Function'
@@ -97,4 +132,4 @@ Resources:
             Stream: !GetAtt PulseValuesStream.StreamArn
             FilterCriteria: 
               Filters: 
-              - Pattern: '{"eventName": ["INSERT"]}'     
+              - Pattern: '{"eventName": ["INSERT"]}'      
