@@ -14,7 +14,7 @@ Globals:
         LOGGER_LEVEL: FINEST
 
 Resources:
-  # DynamoDB таблицы
+
   PulseValuesStream:
     Type: 'AWS::DynamoDB::Table'
     Properties:
@@ -55,66 +55,21 @@ Resources:
       StreamSpecification:
         StreamViewType: NEW_IMAGE
 
-  PulseJumpValuesStream:
-    Type: 'AWS::DynamoDB::Table'
-    Properties:
-      TableName: pulse_jumps_values
-      AttributeDefinitions:
-        - AttributeName: patientId
-          AttributeType: N
-        - AttributeName: timestamp
-          AttributeType: N
-      KeySchema:
-        - AttributeName: patientId
-          KeyType: HASH
-        - AttributeName: timestamp
-          KeyType: RANGE
-      ProvisionedThroughput:
-        ReadCapacityUnits: 5
-        WriteCapacityUnits: 5
-      StreamSpecification:
-        StreamViewType: NEW_IMAGE
 
-  PulseLastValues:
-    Type: 'AWS::DynamoDB::Table'
-    Properties:
-      TableName: last_pulse_values
-      AttributeDefinitions:
-        - AttributeName: patientId
-          AttributeType: N
-        - AttributeName: timestamp
-          AttributeType: N
-      KeySchema:
-        - AttributeName: patientId
-          KeyType: HASH
-        - AttributeName: timestamp
-          KeyType: RANGE
-      ProvisionedThroughput:
-        ReadCapacityUnits: 5
-        WriteCapacityUnits: 5
-
-  # Lambda функция для анализа скачков пульса
-  PulseJumpAnalyzer:
+  RangeProviderFunction:
     Type: 'AWS::Serverless::Function'
     Properties:
-      CodeUri: pulse-jump-analyzer
-      Handler: telran.pulse.monitoring.App::handleRequest
-      Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref PulseJumpValuesStream
-        - DynamoDBCrudPolicy:
-            TableName: !Ref PulseLastValues
+      CodeUri: range-provider
+      Handler: helloworld.App::handleRequest
+      MemorySize: 512
       Events:
-        TableRecordChange:
-          Type: DynamoDB
+        RangeProviderApi:
+          Type: Api
           Properties:
-            StartingPosition: LATEST
-            Stream: !GetAtt PulseValuesStream.StreamArn
-            FilterCriteria:
-              Filters:
-                - Pattern: '{"eventName": ["INSERT"]}'
+            Path: /range
+            Method: get
 
-  # Lambda функция для анализа значений пульса с использованием range-provider
+ 
   PulseValuesAnalyzer:
     Type: 'AWS::Serverless::Function'
     Properties:
@@ -122,7 +77,7 @@ Resources:
       Handler: telran.pulse.monitoring.App::handleRequest
       Environment:
         Variables:
-          RANGE_PROVIDER_URL: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/range"
+          API_GATEWAY_ID: !Ref ServerlessRestApi
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref PulseAbnormalValuesStream
@@ -138,27 +93,26 @@ Resources:
               Filters:
                 - Pattern: '{"eventName": ["INSERT"]}'
 
-  # range-provider Lambda с API Gateway
-  RangeProviderFunction:
-    Type: 'AWS::Serverless::Function'
-    Properties:
-      CodeUri: range-provider
-      Handler: helloworld.App::handleRequest
-      MemorySize: 512
-      Events:
-        RangeProviderApi:
-          Type: Api
-          Properties:
-            Path: /range
-            Method: get
-
 Outputs:
-  PulseValuesStream:
-    Description: "DynamoDB Stream for pulse values"
-    Value: !GetAtt PulseValuesStream.StreamArn
-  PulseAbnormalValuesStream:
-    Description: "DynamoDB Stream for abnormal pulse values"
-    Value: !GetAtt PulseAbnormalValuesStream.StreamArn
-  RangeProviderApi:
+
+  RangeProviderApiUrl:
     Description: "API Gateway URL for range provider function"
     Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/range"
+  
+ 
+  RangeProviderFunctionArn:
+    Description: "ARN of the range-provider function"
+    Value: !GetAtt RangeProviderFunction.Arn
+  
+  PulseValuesAnalyzerFunctionArn:
+    Description: "ARN of the pulse-values-analyzer function"
+    Value: !GetAtt PulseValuesAnalyzer.Arn
+  
+
+  PulseValuesStreamArn:
+    Description: "ARN of the pulse_values DynamoDB stream"
+    Value: !GetAtt PulseValuesStream.StreamArn
+  
+  PulseAbnormalValuesStreamArn:
+    Description: "ARN of the pulse_abnormal_values DynamoDB stream"
+    Value: !GetAtt PulseAbnormalValuesStream.StreamArn
