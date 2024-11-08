@@ -12,6 +12,7 @@ import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.PutItemRequest.Builder;
 import static telran.pulse.monitoring.Constants.*;
 
+
 public class App {
 	static DynamoDbClient clientDynamo = DynamoDbClient.builder().build();
 	static Builder requestInsertLastValues;

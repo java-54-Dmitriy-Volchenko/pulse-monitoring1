@@ -1,89 +1,118 @@
 package telran.pulse.monitoring;
 
-import java.util.*;
-import java.util.logging.*;
+import java.io.IOException;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.logging.ConsoleHandler;
+import java.util.logging.Handler;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import com.amazonaws.services.lambda.runtime.Context;
 import com.amazonaws.services.lambda.runtime.events.DynamodbEvent;
 import com.amazonaws.services.lambda.runtime.events.models.dynamodb.AttributeValue;
-import software.amazon.awssdk.services.dynamodb.*;
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
-import software.amazon.awssdk.services.dynamodb.model.PutItemRequest.Builder;
 import static telran.pulse.monitoring.Constants.*;
+import org.json.JSONObject;
 
 public class App {
+    static DynamoDbClient clientDynamo = DynamoDbClient.builder().build();
+    static Logger logger = Logger.getLogger("pulse-values-analyzer");
+    private static final String API_GATEWAY_ID = System.getenv("API_GATEWAY_ID");
+    static {
+        loggerSetUp();
+    }
 
-	static DynamoDbClient client = DynamoDbClient.builder().build();
-	static Builder request;
-	static Logger logger = Logger.getLogger("pulse-value-analyzer");
-	static {
-		loggerSetUp();
-		
-	}
+    public void handleRequest(DynamodbEvent event, Context context) {
+        var records = event.getRecords();
+        if (records == null) {
+            logger.severe("no records in the event");
+        } else {
+            records.forEach(r -> {
+                Map<String, com.amazonaws.services.lambda.runtime.events.models.dynamodb.AttributeValue> map = r.getDynamodb().getNewImage();
+                if (map == null) {
+                    logger.warning("No new image found");
+                } else if ("INSERT".equals(r.getEventName())) {
+                    
+                    processPulseValue(convertToSdkAttributeMap(map));
+                } else {
+                    logger.warning(r.getEventName() + " event name but should be INSERT");
+                }
+            });
+        }
+    }
 
-	public void handleRequest(DynamodbEvent event, Context context) {
-		request = PutItemRequest.builder().tableName(ABNORMAL_VALUES_TABLE_NAME);
-		event.getRecords().forEach(r -> {
-			Map<String, AttributeValue> map = r.getDynamodb().getNewImage();
-			if (map == null) {
-				logger.warning("No new image found");
-			} else if (r.getEventName().equals("INSERT")) {
-				processPulseValue(map);
-			} else {
-				logger.warning(String.format("The event isn't INSERT but %s", r.getEventName()));
-			}
+    private void processPulseValue(Map<String, software.amazon.awssdk.services.dynamodb.model.AttributeValue> map) {
+        int value = Integer.parseInt(map.get(VALUE_ATTRIBUTE).n());
+        String patientId = map.get(PATIENT_ID_ATTRIBUTE).n();
+        logger.finer(getLogMessage(map));
 
-		});
-	}
+        Range range = fetchRangeForPatient(patientId);
+        if (range != null && (value > range.max || value < range.min)) {
+            logAndRecordAbnormalValue(map);
+        }
+    }
 
-	private static void loggerSetUp() {
-		Level loggerLevel = getLoggerLevel();
-		LogManager.getLogManager().reset();
-		Handler handler = new ConsoleHandler();
-		logger.setLevel(loggerLevel);
-		handler.setLevel(Level.FINEST);
-		logger.addHandler(handler);
-	}
+    private Range fetchRangeForPatient(String patientId) {
+        HttpClient client = HttpClient.newHttpClient();
+        String region = System.getenv("AWS_REGION");  // Получаем регион из переменной окружения
+        String url = String.format("https://%s.execute-api.%s.amazonaws.com/Prod/range?patientId=%s", 
+                                   API_GATEWAY_ID, region, patientId);
+        HttpRequest request = HttpRequest.newBuilder(URI.create(url)).build();
 
-	private static Level getLoggerLevel() {
-		String levelStr = System.getenv()
-		.getOrDefault(LOGGER_LEVEL_ENV_VARIABLE, DEFAULT_LOGGER_LEVEL);
-		Level res = null;
-		try {
-			res = Level.parse(levelStr);
-		} catch (Exception e) {
-			res = Level.parse(DEFAULT_LOGGER_LEVEL);
-		}
-		return res;
-	}
+        try {
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() == 200) {
+                JSONObject json = new JSONObject(response.body());
+                int min = json.getInt("min");
+                int max = json.getInt("max");
+                return new Range(min, max);
+            } else {
+                logger.warning("Failed to fetch range: " + response.body());
+            }
+        } catch (IOException | InterruptedException e) {
+            logger.log(Level.SEVERE, "Error fetching range from range-provider", e);
+        }
+        return null;
+    }
 
-	private void processPulseValue(Map<String, AttributeValue> map) {
-		int value = Integer.parseInt(map.get(VALUE_ATTRIBUTE).getN());
-		logger.finer(getLogMessage(map));
-		if (value > MAX_THRESHOLD_PULSE_VALUE || value < MIN_THRESHOLD_PULSE_VALUE) {
-			processAbnormalPulseValue(map);
-		}
-	}
+    private void logAndRecordAbnormalValue(Map<String, software.amazon.awssdk.services.dynamodb.model.AttributeValue> map) {
+        logger.info(getLogMessage(map));
+        clientDynamo.putItem(PutItemRequest.builder()
+                .tableName(ABNORMAL_VALUES_TABLE_NAME)
+                .item(map)
+                .build());
+    }
 
-	private void processAbnormalPulseValue(Map<String, AttributeValue> map) {
-		logger.info(getLogMessage(map));
-		client.putItem(request.item(getPutItemMap(map)).build());
-	}
+    private String getLogMessage(Map<String, software.amazon.awssdk.services.dynamodb.model.AttributeValue> map) {
+        return String.format("PatientId: %s, Value: %s", 
+                map.get(PATIENT_ID_ATTRIBUTE).n(), 
+                map.get(VALUE_ATTRIBUTE).n());
+    }
 
-	private Map<String, software.amazon.awssdk.services.dynamodb.model.AttributeValue> getPutItemMap(
-			Map<String, AttributeValue> map) {
-		Map<String, software.amazon.awssdk.services.dynamodb.model.AttributeValue> res = new HashMap<>();
-		res.put(PATIENT_ID_ATTRIBUTE, software.amazon.awssdk.services.dynamodb.model.AttributeValue.builder()
-				.n(map.get(PATIENT_ID_ATTRIBUTE).getN()).build());
-		res.put(TIMESTAMP_ATTRIBUTE, software.amazon.awssdk.services.dynamodb.model.AttributeValue.builder()
-				.n(map.get(TIMESTAMP_ATTRIBUTE).getN()).build());
-		res.put(VALUE_ATTRIBUTE, software.amazon.awssdk.services.dynamodb.model.AttributeValue.builder()
-				.n(map.get(VALUE_ATTRIBUTE).getN()).build());
-		return res;
-	}
+    private static void loggerSetUp() {
+        Level loggerLevel = Level.parse(System.getenv().getOrDefault(LOGGER_LEVEL_ENV_VARIABLE, DEFAULT_LOGGER_LEVEL));
+        logger.setLevel(loggerLevel);
+        Handler handler = new ConsoleHandler();
+        handler.setLevel(Level.FINEST);
+        logger.addHandler(handler);
+    }
 
-	private String getLogMessage(Map<String, AttributeValue> map) {
-		return String.format("patientId: %s, value: %s", map.get(PATIENT_ID_ATTRIBUTE).getN(),
-				map.get(VALUE_ATTRIBUTE).getN());
-	}
+    // Конвертация из Lambda AttributeValue в Sdk AttributeValue
+    private Map<String, software.amazon.awssdk.services.dynamodb.model.AttributeValue> convertToSdkAttributeMap(Map<String, AttributeValue> lambdaMap) {
+        Map<String, software.amazon.awssdk.services.dynamodb.model.AttributeValue> sdkMap = new HashMap<>();
+        if (lambdaMap != null) {
+            lambdaMap.forEach((key, value) -> {
+                sdkMap.put(key, software.amazon.awssdk.services.dynamodb.model.AttributeValue.builder().n(value.getN()).build());
+            });
+        }
+        return sdkMap;
+    }
+
+    record Range(int min, int max) {}
 }

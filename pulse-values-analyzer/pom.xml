@@ -28,6 +28,11 @@
             <artifactId>dynamodb</artifactId>
             <version>2.28.24</version>
         </dependency>
+        <dependency>
+          <groupId>org.json</groupId>
+          <artifactId>json</artifactId>
+          <version>20210307</version>
+      </dependency>
     </dependencies>
 
     <build>
