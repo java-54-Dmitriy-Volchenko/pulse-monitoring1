@@ -12,7 +12,6 @@ Globals:
     Environment:
       Variables:
         LOGGER_LEVEL: FINEST
-        BASE_URL: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/range"
 
 Resources:
 
@@ -20,6 +19,18 @@ Resources:
     Type: AWS::Serverless::Api
     Properties:
       StageName: Prod
+      DefinitionBody:
+        openapi: "3.0.1"
+        info:
+          title: "Pulse Monitoring API"
+          version: "1.0"
+        paths:
+          /range:
+            get:
+              x-amazon-apigateway-integration:
+                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${RangeProviderFunction.Arn}/invocations"
+                httpMethod: POST
+                type: aws_proxy
 
   PulseAbnormalValuesStream:
     Type: 'AWS::DynamoDB::Table'
@@ -75,11 +86,35 @@ Resources:
         ReadCapacityUnits: 5
         WriteCapacityUnits: 5
 
+  RangeProviderFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: range-provider
+      Handler: helloworld.App::handleRequest
+      Runtime: java17
+      Environment:
+        Variables:
+          TABLE_NAME: "pulse_values"
+          DYNAMODB_REGION: !Ref "AWS::Region"
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: pulse_values
+      Events:
+        RangeApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ServerlessRestApi
+            Path: /range
+            Method: get
+
   PulseValuesAnalyzer:
     Type: 'AWS::Serverless::Function'
     Properties:
       CodeUri: pulse-values-analyzer
       Handler: telran.pulse.monitoring.App::handleRequest
+      Environment:
+        Variables:
+          BASE_URL: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/range"
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref PulseAbnormalValuesStream
@@ -121,7 +156,7 @@ Outputs:
 
   ApiGatewayUrl:
     Description: "API Gateway URL for the range provider function"
-    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/range"
 
   PulseValuesAnalyzerFunctionArn:
     Description: "ARN of the pulse-values-analyzer function"

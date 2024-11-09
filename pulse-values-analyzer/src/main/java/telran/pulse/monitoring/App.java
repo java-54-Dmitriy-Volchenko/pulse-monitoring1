@@ -25,8 +25,7 @@ public class App {
     static DynamoDbClient clientDynamo = DynamoDbClient.builder().build();
     static Logger logger = Logger.getLogger("pulse-values-analyzer");
     
-    private static final String BASE_URL = System.getenv().getOrDefault("BASE_URL", "https://op6v9v4ta2.execute-api.us-east-1.amazonaws.com/Prod/range");
-
+    private static final String BASE_URL = System.getenv("BASE_URL");
     static {
         loggerSetUp();
     }
