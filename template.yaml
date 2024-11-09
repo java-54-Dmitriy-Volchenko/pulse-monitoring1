@@ -12,9 +12,11 @@ Globals:
     Environment:
       Variables:
         LOGGER_LEVEL: FINEST
+        BASE_URL: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/range"
 
 Resources:
 
+ 
   PulseValuesStream:
     Type: 'AWS::DynamoDB::Table'
     Properties:
@@ -55,7 +57,41 @@ Resources:
       StreamSpecification:
         StreamViewType: NEW_IMAGE
 
+  PulseJumpValuesStream:
+    Type: 'AWS::DynamoDB::Table'
+    Properties:
+      TableName: pulse_jumps_values
+      AttributeDefinitions:
+        - AttributeName: patientId
+          AttributeType: N
+        - AttributeName: timestamp
+          AttributeType: N
+      KeySchema:
+        - AttributeName: patientId
+          KeyType: HASH
+        - AttributeName: timestamp
+          KeyType: RANGE
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+      StreamSpecification:
+        StreamViewType: NEW_IMAGE
 
+  PulseLastValues:
+    Type: 'AWS::DynamoDB::Table'
+    Properties:
+      TableName: last_pulse_values
+      AttributeDefinitions:
+        - AttributeName: patientId
+          AttributeType: N
+      KeySchema:
+        - AttributeName: patientId
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+
+  
   RangeProviderFunction:
     Type: 'AWS::Serverless::Function'
     Properties:
@@ -69,19 +105,39 @@ Resources:
             Path: /range
             Method: get
 
- 
+  
   PulseValuesAnalyzer:
     Type: 'AWS::Serverless::Function'
     Properties:
       CodeUri: pulse-values-analyzer
       Handler: telran.pulse.monitoring.App::handleRequest
-      Environment:
-        Variables:
-          API_GATEWAY_ID: !Ref ServerlessRestApi
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref PulseAbnormalValuesStream
         - DynamoDBCrudPolicy:
+            TableName: !Ref PulseValuesStream
+      Events:
+        TableRecordChange:
+          Type: DynamoDB
+          Properties:
+            StartingPosition: LATEST
+            Stream: !GetAtt PulseValuesStream.StreamArn
+            FilterCriteria:
+              Filters:
+                - Pattern: '{"eventName": ["INSERT"]}'
+
+  
+  PulseJumpAnalyzer:
+    Type: 'AWS::Serverless::Function'
+    Properties:
+      CodeUri: pulse-jump-analyzer
+      Handler: telran.pulse.monitoring.App::handleRequest
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PulseJumpValuesStream
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PulseLastValues
+        - DynamoDBReadPolicy:
             TableName: !Ref PulseValuesStream
       Events:
         TableRecordChange:
@@ -98,21 +154,23 @@ Outputs:
   RangeProviderApiUrl:
     Description: "API Gateway URL for range provider function"
     Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/range"
-  
- 
+
   RangeProviderFunctionArn:
     Description: "ARN of the range-provider function"
     Value: !GetAtt RangeProviderFunction.Arn
-  
+
   PulseValuesAnalyzerFunctionArn:
     Description: "ARN of the pulse-values-analyzer function"
     Value: !GetAtt PulseValuesAnalyzer.Arn
-  
+
+  PulseJumpAnalyzerFunctionArn:
+    Description: "ARN of the pulse-jump-analyzer function"
+    Value: !GetAtt PulseJumpAnalyzer.Arn
 
   PulseValuesStreamArn:
     Description: "ARN of the pulse_values DynamoDB stream"
     Value: !GetAtt PulseValuesStream.StreamArn
-  
+
   PulseAbnormalValuesStreamArn:
     Description: "ARN of the pulse_abnormal_values DynamoDB stream"
     Value: !GetAtt PulseAbnormalValuesStream.StreamArn
