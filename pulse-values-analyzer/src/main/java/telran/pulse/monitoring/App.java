@@ -25,8 +25,7 @@ public class App {
     static DynamoDbClient clientDynamo = DynamoDbClient.builder().build();
     static Logger logger = Logger.getLogger("pulse-values-analyzer");
     
-    private static final String API_GATEWAY_ID = System.getenv().getOrDefault("API_GATEWAY_ID", "bjuf20yi76");
-    private static final String REGION = System.getenv().getOrDefault("AWS_REGION", "us-east-1");
+    private static final String BASE_URL = System.getenv().getOrDefault("BASE_URL", "https://op6v9v4ta2.execute-api.us-east-1.amazonaws.com/Prod/range");
 
     static {
         loggerSetUp();
@@ -63,8 +62,7 @@ public class App {
 
     private Range fetchRangeForPatient(String patientId) {
         HttpClient client = HttpClient.newHttpClient();
-        String url = String.format("https://%s.execute-api.%s.amazonaws.com/Prod/range?patientId=%s", 
-                                   API_GATEWAY_ID, REGION, patientId);
+        String url = String.format("%s?patientId=%s", BASE_URL, patientId);
         HttpRequest request = HttpRequest.newBuilder(URI.create(url)).build();
 
         try {

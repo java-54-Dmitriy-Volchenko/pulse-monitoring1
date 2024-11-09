@@ -1,10 +1,18 @@
 version = 0.1
 [default.deploy.parameters]
+
+s3_bucket = "for-lambda-functions1"
 stack_name = "pulse-monitoring"
-resolve_s3 = true
+
 s3_prefix = "pulse-monitoring"
 region = "us-east-1"
 confirm_changeset = true
 capabilities = "CAPABILITY_IAM"
 disable_rollback = true
 image_repositories = []
+
+
+
+
+
+

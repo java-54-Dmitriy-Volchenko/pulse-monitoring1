@@ -16,26 +16,10 @@ Globals:
 
 Resources:
 
- 
-  PulseValuesStream:
-    Type: 'AWS::DynamoDB::Table'
+  ServerlessRestApi:
+    Type: AWS::Serverless::Api
     Properties:
-      TableName: pulse_values
-      AttributeDefinitions:
-        - AttributeName: patientId
-          AttributeType: N
-        - AttributeName: timestamp
-          AttributeType: N
-      KeySchema:
-        - AttributeName: patientId
-          KeyType: HASH
-        - AttributeName: timestamp
-          KeyType: RANGE
-      ProvisionedThroughput:
-        ReadCapacityUnits: 5
-        WriteCapacityUnits: 5
-      StreamSpecification:
-        StreamViewType: NEW_IMAGE
+      StageName: Prod
 
   PulseAbnormalValuesStream:
     Type: 'AWS::DynamoDB::Table'
@@ -91,7 +75,6 @@ Resources:
         ReadCapacityUnits: 5
         WriteCapacityUnits: 5
 
-  
   PulseValuesAnalyzer:
     Type: 'AWS::Serverless::Function'
     Properties:
@@ -100,19 +83,18 @@ Resources:
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref PulseAbnormalValuesStream
-        - DynamoDBCrudPolicy:
-            TableName: !Ref PulseValuesStream
+        - DynamoDBReadPolicy:
+            TableName: pulse_values
       Events:
         TableRecordChange:
           Type: DynamoDB
           Properties:
             StartingPosition: LATEST
-            Stream: !GetAtt PulseValuesStream.StreamArn
+            Stream: arn:aws:dynamodb:us-east-1:692859932768:table/pulse_values/stream/2024-11-09T14:00:00.052
             FilterCriteria:
               Filters:
                 - Pattern: '{"eventName": ["INSERT"]}'
 
-  
   PulseJumpAnalyzer:
     Type: 'AWS::Serverless::Function'
     Properties:
@@ -124,26 +106,22 @@ Resources:
         - DynamoDBCrudPolicy:
             TableName: !Ref PulseLastValues
         - DynamoDBReadPolicy:
-            TableName: !Ref PulseValuesStream
+            TableName: pulse_values
       Events:
         TableRecordChange:
           Type: DynamoDB
           Properties:
             StartingPosition: LATEST
-            Stream: !GetAtt PulseValuesStream.StreamArn
+            Stream: arn:aws:dynamodb:us-east-1:692859932768:table/pulse_values/stream/2024-11-09T14:00:00.052
             FilterCriteria:
               Filters:
                 - Pattern: '{"eventName": ["INSERT"]}'
 
 Outputs:
 
-  RangeProviderApiUrl:
-    Description: "API Gateway URL for range provider function"
-    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/range"
-
-  RangeProviderFunctionArn:
-    Description: "ARN of the range-provider function"
-    Value: !GetAtt RangeProviderFunction.Arn
+  ApiGatewayUrl:
+    Description: "API Gateway URL for the range provider function"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"
 
   PulseValuesAnalyzerFunctionArn:
     Description: "ARN of the pulse-values-analyzer function"
@@ -152,10 +130,6 @@ Outputs:
   PulseJumpAnalyzerFunctionArn:
     Description: "ARN of the pulse-jump-analyzer function"
     Value: !GetAtt PulseJumpAnalyzer.Arn
-
-  PulseValuesStreamArn:
-    Description: "ARN of the pulse_values DynamoDB stream"
-    Value: !GetAtt PulseValuesStream.StreamArn
 
   PulseAbnormalValuesStreamArn:
     Description: "ARN of the pulse_abnormal_values DynamoDB stream"
