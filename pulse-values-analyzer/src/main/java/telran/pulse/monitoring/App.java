@@ -24,8 +24,9 @@ import org.json.JSONObject;
 public class App {
     static DynamoDbClient clientDynamo = DynamoDbClient.builder().build();
     static Logger logger = Logger.getLogger("pulse-values-analyzer");
-    private static final String API_GATEWAY_ID = System.getenv("API_GATEWAY_ID");
-    private static final String REGION = System.getenv("AWS_REGION");
+    
+    private static final String API_GATEWAY_ID = System.getenv().getOrDefault("API_GATEWAY_ID", "bjuf20yi76");
+    private static final String REGION = System.getenv().getOrDefault("AWS_REGION", "us-east-1");
 
     static {
         loggerSetUp();
@@ -61,11 +62,6 @@ public class App {
     }
 
     private Range fetchRangeForPatient(String patientId) {
-        if (API_GATEWAY_ID == null || REGION == null) {
-            logger.severe("API_GATEWAY_ID or AWS_REGION environment variable is not set.");
-            return null;
-        }
-
         HttpClient client = HttpClient.newHttpClient();
         String url = String.format("https://%s.execute-api.%s.amazonaws.com/Prod/range?patientId=%s", 
                                    API_GATEWAY_ID, REGION, patientId);
