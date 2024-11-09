@@ -92,20 +92,6 @@ Resources:
         WriteCapacityUnits: 5
 
   
-  RangeProviderFunction:
-    Type: 'AWS::Serverless::Function'
-    Properties:
-      CodeUri: range-provider
-      Handler: helloworld.App::handleRequest
-      MemorySize: 512
-      Events:
-        RangeProviderApi:
-          Type: Api
-          Properties:
-            Path: /range
-            Method: get
-
-  
   PulseValuesAnalyzer:
     Type: 'AWS::Serverless::Function'
     Properties:
