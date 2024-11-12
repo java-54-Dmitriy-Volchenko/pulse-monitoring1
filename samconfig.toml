@@ -1,8 +1,8 @@
 version = 0.1
 [default.deploy.parameters]
 stack_name = "pulse-monitoring"
-resolve_s3 = true
-s3_prefix = "pulse-monitoring"
+s3_bucket = "pulse-monitoring1"  # явное указание S3-бакета
+s3_prefix = "pulse-monitoring1"
 region = "us-east-1"
 confirm_changeset = true
 capabilities = "CAPABILITY_IAM"

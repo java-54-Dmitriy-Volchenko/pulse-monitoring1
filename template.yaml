@@ -97,7 +97,7 @@ Resources:
       TopicName: AbnormalValuesTopic
       Subscription:
         - Protocol: email
-          Endpoint: yuriaws25@gmail.com
+          Endpoint: dmitriy.volchenko@gmail.com
         
   # lambda function for pulse jumps finding out
   PulseJumpAnalyzer:
