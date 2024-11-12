@@ -50,7 +50,7 @@ public class App {
 						}
 						
 					}
-					putLastValue(patientId, lastValue);
+					putLastValue(patientId, currentValue);
 				} else {
 					logger.warning(r.getEventName() + " event name but should be INSERT");
 				}
